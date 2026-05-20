@@ -55,7 +55,11 @@ function terrain(t){
 function terrainSlope(t){const eps=0.0001,p1=terrain(Math.max(0,t-eps)),p2=terrain(Math.min(1,t+eps)); return (p2.y-p1.y)/(p2.x-p1.x);}
 
 function getSpringContactT(){
-  return Math.max(0.94, Math.min(0.985, (canvas.width - 70) / canvas.width));
+  return Math.max(0.88, Math.min(0.94, (canvas.width - 175) / canvas.width));
+}
+
+function getWallStopT(){
+  return Math.max(0.965, Math.min(0.992, (canvas.width - 42) / canvas.width));
 }
 
 function updatePhysics(dt){
@@ -79,7 +83,8 @@ function updatePhysics(dt){
   ball.velocity += accel*dt*state.timeScale;
   ball.t += ball.velocity*0.06*dt*state.timeScale;
   if(ball.t<0){ball.t=0; ball.velocity *= -0.25;}
-  if(ball.t>0.985){ball.t=0.985; if(ball.velocity>0)ball.velocity*=-0.4;}
+  const wallStopT = getWallStopT();
+  if(ball.t>wallStopT){ball.t=wallStopT; if(ball.velocity>0)ball.velocity*=-0.45;}
 
   const visualTarget = Math.min(1, spring.compression / 0.22);
   spring.visualCompression += (visualTarget - spring.visualCompression) * Math.min(1, 14*dt);
@@ -101,13 +106,13 @@ function drawTerrain(){ctx.beginPath(); for(let i=0;i<=500;i++){const p=terrain(
 function drawSpring(){
   const springContactT = getSpringContactT();
   const base=terrain(springContactT);
-  const wallX=canvas.width-55;
+  const wallX=canvas.width-34;
   const y=base.y-8;
 
   const compression = spring.visualCompression;
-  const compressionPx = compression * 92;
-  const maxLength = Math.max(60, wallX - base.x - 26);
-  const length = Math.max(28, maxLength - compressionPx);
+  const compressionPx = compression * 78;
+  const restLength = Math.max(72, wallX - base.x - 22);
+  const length = Math.max(24, restLength - compressionPx);
   const coils = 18;
   const amp = lerp(14, 5, compression);
   const kick = Math.min(3.5, Math.abs(ball.velocity) * 0.2) * (compression > 0.01 ? 1 : 0.35);
@@ -118,12 +123,14 @@ function drawSpring(){
 
   ctx.strokeStyle="#64748b";
   ctx.lineWidth=6;
+  const bumperX = wallX - length;
+
   ctx.beginPath();
-  ctx.moveTo(base.x+8, y);
-  ctx.lineTo(base.x+20, y);
+  ctx.moveTo(base.x+6, y);
+  ctx.lineTo(bumperX-4, y);
   ctx.stroke();
 
-  const springGradient = ctx.createLinearGradient(base.x+20, y, base.x+20+length, y);
+  const springGradient = ctx.createLinearGradient(wallX, y, bumperX, y);
   springGradient.addColorStop(0, "#f8fafc");
   springGradient.addColorStop(1, "#94a3b8");
 
@@ -132,18 +139,18 @@ function drawSpring(){
   ctx.beginPath();
   for(let i=0;i<=coils*22;i++){
     const t=i/(coils*22);
-    const x=base.x+20+t*length;
+    const x=wallX-t*length;
     const yy=y+Math.sin(t*Math.PI*coils*2)*(amp+wiggle);
     i===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy);
   }
   ctx.stroke();
 
-  const headX = base.x + 20 + length;
+  const headX = bumperX;
   ctx.strokeStyle="#334155";
   ctx.lineWidth=5;
   ctx.beginPath();
-  ctx.moveTo(headX, y);
-  ctx.lineTo(wallX, y);
+  ctx.moveTo(headX, y-13);
+  ctx.lineTo(headX, y+13);
   ctx.stroke();
 
   const wallGradient=ctx.createLinearGradient(wallX-16,y-72,wallX+16,y+72);
