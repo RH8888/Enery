@@ -33,7 +33,8 @@ const ball = {
 
 const spring = {
   compression: 0,
-  maxCompressionPx: 120
+  maxCompressionPx: 120,
+  forceN: 0
 };
 
 let h1 = 2.0;
@@ -98,6 +99,7 @@ function resetBall() {
   ball.t = parseFloat($("position").value) / 100;
   ball.velocity = parseFloat($("velocity").value);
   spring.compression = 0;
+  spring.forceN = 0;
   maxEnergySeen = 1;
 }
 
@@ -170,9 +172,10 @@ function updatePhysics(dt) {
     const slope = terrainSlope(ball.t);
     const theta = Math.atan(slope);
 
-    const gravityForce = state.gravity * Math.sin(theta);
-    const frictionForce = -state.friction * ball.velocity;
-    let accel = gravityForce + frictionForce;
+    const gravityAccel = state.gravity * Math.sin(theta);
+    const frictionAccel = -state.friction * ball.velocity;
+    let accel = gravityAccel + frictionAccel;
+    spring.forceN = 0;
 
     const wallX = getWallX();
     const restLength = getSpringRestLength();
@@ -183,34 +186,27 @@ function updatePhysics(dt) {
     const penetration = ballFrontX - springStartX;
 
     if (penetration > 0) {
-      // Allow physical compression tracking all the way back to the structural wall limit
       spring.compression = Math.min(penetration, restLength);
 
       const compressionMeters = spring.compression / 120;
-      const springForce = (-state.springK * compressionMeters) - (state.springDamping * ball.velocity);
+      const springVelocity = ball.velocity * Math.cos(theta);
 
-      // Unattached spring law: The spring can only push outwards (leftward force < 0)
-      if (springForce < 0) {
-        accel += springForce / state.mass;
-      }
+      // F = -kx - c*xDot (xDot > 0 means compressing into the spring).
+      const rawSpringForce = (-state.springK * compressionMeters) - (state.springDamping * springVelocity);
 
-      // Hard safety barrier wall collision
+      // A free spring cannot pull the ball, only push it away from the wall.
+      const springForce = Math.min(0, rawSpringForce);
+      spring.forceN = springForce;
+      accel += springForce / state.mass;
+
+      // Impenetrable wall at the spring anchor.
       if (ballFrontX > wallX) {
         const overlap = ballFrontX - wallX;
         ball.t -= overlap / canvas.width;
-        if (ball.velocity > 0) {
-          ball.velocity *= -0.65;
-        }
+        if (ball.velocity > 0) ball.velocity = 0;
       }
     } else {
-      // Real physics: A massless spring relaxes exponentially based on its internal stiffness/damping ratio
-      if (state.springDamping > 0) {
-        const decayFactor = Math.exp(-(state.springK / state.springDamping) * sDt);
-        spring.compression *= decayFactor;
-        if (spring.compression < 0.05) spring.compression = 0;
-      } else {
-        spring.compression = 0;
-      }
+      spring.compression = 0;
     }
 
     // Semi-Implicit Symplectic Euler Integration Loop
@@ -231,7 +227,7 @@ function updatePhysics(dt) {
   }
 
   statusText.textContent = state.running
-    ? `Running · v=${ball.velocity.toFixed(2)} m/s · spring=${spring.compression.toFixed(1)} px`
+    ? `Running · v=${ball.velocity.toFixed(2)} m/s · spring=${spring.compression.toFixed(1)} px · Fs=${spring.forceN.toFixed(1)} N`
     : "Paused";
 }
 
