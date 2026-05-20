@@ -8,7 +8,7 @@ window.addEventListener("resize", resizeCanvas); resizeCanvas();
 
 const state = {running:true, gravity:9.81, friction:0.02, mass:5, springK:120, springDamping:1.5, springRest:0.08, timeScale:1, ballRadius:16};
 const ball = {t:0.1, velocity:12};
-const spring = {compression:0, compressionScale:8, visualCompression:0};
+const spring = {compression:0, velocity:0, visualCompression:0, compressionScale:8, maxCompression:0.24, settleEps:0.0003};
 let h1 = 2.0, h2 = 0.5, h3 = 2.5, maxEnergySeen = 1;
 
 const sliders = ["velocity","position","gravity","friction","mass","spring","timeScale","h1","h2","h3","springRest","springDamping","compressionScale"];
@@ -41,7 +41,7 @@ $("playBtn").onclick = ()=>{state.running = true;};
 $("pauseBtn").onclick = ()=>{state.running = false;};
 $("resetBtn").onclick = resetBall;
 
-function resetBall(){ball.t = parseFloat($("position").value)/100; ball.velocity = parseFloat($("velocity").value); maxEnergySeen = 1; spring.compression = 0; spring.visualCompression = 0;}
+function resetBall(){ball.t = parseFloat($("position").value)/100; ball.velocity = parseFloat($("velocity").value); maxEnergySeen = 1; spring.compression = 0; spring.velocity = 0; spring.visualCompression = 0;}
 
 function smoothstep(t){return t*t*(3-2*t);} function lerp(a,b,t){return a+(b-a)*t;} function metersToY(m){return canvas.height-120-m*120;}
 function terrain(t){
@@ -64,32 +64,61 @@ function getWallStopT(){
 
 function updatePhysics(dt){
   if(!state.running) return;
+
+  const simDt = dt * state.timeScale;
   const slope = terrainSlope(ball.t);
   const gravityForce = state.gravity*slope*0.9;
   const frictionForce = -state.friction*ball.velocity;
   let accel = gravityForce+frictionForce;
 
-  const springContactT = getSpringContactT();
-  const displacement = Math.max(0, ball.t - springContactT);
-  spring.compression = Math.max(0, displacement - state.springRest);
+  ball.velocity += accel*simDt;
+  ball.t += ball.velocity*0.06*simDt;
 
-  if(spring.compression>0){
-    const compressionMeters = spring.compression * spring.compressionScale;
-    const springForce = -state.springK*compressionMeters;
-    const dampingForce = -state.springDamping*ball.velocity;
-    accel += (springForce + dampingForce)/state.mass;
+  if(ball.t<0){ball.t=0; ball.velocity *= -0.25;}
+
+  const springContactT = getSpringContactT();
+  const wallStopT = getWallStopT();
+  const compressionTarget = Math.max(0, ball.t - springContactT - state.springRest);
+  const boundedTarget = Math.min(spring.maxCompression, compressionTarget);
+
+  if(compressionTarget > 0 || spring.compression > spring.settleEps || spring.velocity > spring.settleEps){
+    const springAccel = (state.springK * (boundedTarget - spring.compression) - state.springDamping * spring.velocity) / Math.max(0.1, state.mass);
+    spring.velocity += springAccel * simDt;
+    spring.compression += spring.velocity * simDt;
+
+    if(spring.compression < 0){
+      spring.compression = 0;
+      spring.velocity = 0;
+    }
+
+    if(spring.compression > spring.maxCompression){
+      spring.compression = spring.maxCompression;
+      if(spring.velocity > 0) spring.velocity *= -0.15;
+    }
+
+    const springImpulse = (state.springK * spring.compression + state.springDamping * spring.velocity) / Math.max(0.1, state.mass);
+    if(ball.t >= springContactT - 0.0001){
+      ball.velocity -= springImpulse * simDt * 0.05;
+    }
+  } else {
+    spring.compression = 0;
+    spring.velocity = 0;
   }
 
-  ball.velocity += accel*dt*state.timeScale;
-  ball.t += ball.velocity*0.06*dt*state.timeScale;
-  if(ball.t<0){ball.t=0; ball.velocity *= -0.25;}
-  const wallStopT = getWallStopT();
-  if(ball.t>wallStopT){ball.t=wallStopT; if(ball.velocity>0)ball.velocity*=-0.45;}
+  const compressedLimitT = wallStopT - spring.compression;
+  if(ball.t > compressedLimitT){
+    ball.t = compressedLimitT;
+    if(ball.velocity > 0){
+      const rebound = 0.25 + Math.min(0.65, spring.compression * 3.2);
+      ball.velocity = -Math.abs(ball.velocity) * rebound;
+    }
+  }
 
-  const visualTarget = Math.min(1, spring.compression / 0.22);
-  spring.visualCompression += (visualTarget - spring.visualCompression) * Math.min(1, 14*dt);
+  const visualTarget = Math.min(1, spring.compression / spring.maxCompression);
+  const smoothRate = 1 - Math.exp(-20 * simDt);
+  spring.visualCompression += (visualTarget - spring.visualCompression) * Math.min(1, smoothRate);
 
-  statusText.textContent = state.running ? `Running · v=${ball.velocity.toFixed(2)} m/s · x=${(ball.t*100).toFixed(1)}%` : "Paused";
+  statusText.textContent = state.running ? `Running · v=${ball.velocity.toFixed(2)} m/s · x=${(ball.t*100).toFixed(1)}% · spring=${(spring.compression*100).toFixed(1)}%` : "Paused";
 }
 
 function updateEnergy(){
@@ -112,9 +141,11 @@ function drawSpring(){
   const compression = spring.visualCompression;
   const compressionPx = compression * 78;
   const restLength = Math.max(72, wallX - base.x - 22);
-  const length = Math.max(24, restLength - compressionPx);
+  const minLength = 26;
+  const length = Math.max(minLength, restLength - compressionPx);
   const coils = 18;
-  const amp = lerp(14, 5, compression);
+  const coilPitch = length / coils;
+  const amp = Math.min(coilPitch * 0.62, lerp(14, 5, compression));
   const kick = Math.min(3.5, Math.abs(ball.velocity) * 0.2) * (compression > 0.01 ? 1 : 0.35);
   const wiggle = Math.sin(performance.now()*0.028) * kick;
 
