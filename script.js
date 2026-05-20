@@ -90,10 +90,55 @@ function drawTerrain(){ctx.beginPath(); for(let i=0;i<=500;i++){const p=terrain(
   const g=ctx.createLinearGradient(0,0,0,canvas.height); g.addColorStop(0,"#cbd5e1"); g.addColorStop(1,"#94a3b8"); ctx.fillStyle=g; ctx.fill(); ctx.strokeStyle="#475467"; ctx.lineWidth=5; ctx.stroke();}
 
 function drawSpring(){
-  const p=terrain(spring.startT), wallX=canvas.width-45, compPx=spring.compression*110;
-  const length=Math.max(40,wallX-p.x-compPx), startX=p.x+10, y=p.y, coils=14, amp=Math.max(4,15-spring.compression*40);
-  ctx.beginPath(); for(let i=0;i<=coils*20;i++){const t=i/(coils*20),x=startX+t*length,yy=y+Math.sin(t*Math.PI*coils*2)*amp; i===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy);} ctx.strokeStyle="#d1d5db"; ctx.lineWidth=6; ctx.stroke();
-  ctx.fillStyle="#475467"; ctx.fillRect(wallX,y-58,16,116);
+  const base=terrain(spring.startT);
+  const wallX=canvas.width-55;
+  const anchorX=Math.min(wallX-24, base.x+34);
+  const y=base.y-6;
+  const compressionRatio=Math.min(1, spring.compression/0.15);
+  const compressionPx=spring.compression*170;
+  const maxLength=Math.max(58, wallX-anchorX-12);
+  const length=Math.max(30, maxLength-compressionPx);
+  const coils=16;
+  const amp=lerp(13,5,compressionRatio);
+  const wiggle=Math.sin(performance.now()*0.018+ball.velocity*0.08)*Math.min(2.2, Math.abs(ball.velocity)*0.16);
+
+  ctx.lineCap="round";
+  ctx.lineJoin="round";
+
+  ctx.strokeStyle="#64748b";
+  ctx.lineWidth=6;
+  ctx.beginPath();
+  ctx.moveTo(base.x+8, y);
+  ctx.lineTo(anchorX, y);
+  ctx.stroke();
+
+  const springGradient = ctx.createLinearGradient(anchorX, y, anchorX+length, y);
+  springGradient.addColorStop(0, "#f8fafc");
+  springGradient.addColorStop(1, "#94a3b8");
+
+  ctx.strokeStyle=springGradient;
+  ctx.lineWidth=5;
+  ctx.beginPath();
+  for(let i=0;i<=coils*24;i++){
+    const t=i/(coils*24);
+    const x=anchorX+t*length;
+    const yy=y+Math.sin(t*Math.PI*coils*2)*(amp+wiggle);
+    i===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle="#334155";
+  ctx.lineWidth=5;
+  ctx.beginPath();
+  ctx.moveTo(anchorX+length, y);
+  ctx.lineTo(wallX, y);
+  ctx.stroke();
+
+  const wallGradient=ctx.createLinearGradient(wallX-16,y-72,wallX+16,y+72);
+  wallGradient.addColorStop(0,"#cbd5e1");
+  wallGradient.addColorStop(1,"#475569");
+  ctx.fillStyle=wallGradient;
+  ctx.fillRect(wallX,y-72,18,144);
 }
 
 function drawBall(x,y){ctx.beginPath(); ctx.arc(x+10,y+14,state.ballRadius,0,Math.PI*2); ctx.fillStyle="rgba(0,0,0,0.16)"; ctx.fill();
